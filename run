@@ -1,0 +1,110 @@
+#!/usr/bin/env python3
+
+import sys
+import os
+import re
+import json
+import tableActions
+import defines
+import lib
+    
+
+def main(pathToMigration: str):
+    migrationFiles = os.listdir(pathToMigration)
+    
+
+    migrationFilesNew = []
+
+    for fileName in migrationFiles:
+        if ".Designer.cs" in fileName:
+            continue
+
+        if len(re.findall(r"\d{14}", fileName)) < 1:
+            continue
+
+        migrationFilesNew.append(fileName)
+
+    migrationFiles = migrationFilesNew
+
+    migrations = {}
+    actions = {}
+
+    for file in sorted(migrationFiles):
+        with open(pathToMigration + "/" + file, "r") as readFile:
+            fileData = readFile.read().split("protected override void Down")[0] + "migrationBuilder"
+            
+            tablesActions = re.findall(defines.ACTION_TABLE_PATTERN, fileData)
+
+            for i, actionData in enumerate(tablesActions):
+                dumpName = file.split(".")[0] + "__" + str(i) + "__" + actionData[0]
+
+                actionName = actionData[0]
+
+                if actionName == "CreateTable":
+                    migrations.update(tableActions.createTable(actionData[1]))
+                elif actionName == "AddForeignKey":
+                    migrations = tableActions.addForeignKey(migrations, actionData[1])
+                elif actionName == "DropTable":
+                    migrations = tableActions.dropTable(migrations, actionData[1])
+                elif actionName == "DropForeignKey":
+                    migrations = tableActions.dropForeignKey(migrations, actionData[1])
+                elif actionName == "AddColumn":
+                    migrations = tableActions.addColumn(migrations, actionData[1])
+                elif actionName == "DropColumn":
+                    migrations = tableActions.dropColumn(migrations, actionData[1])
+                elif actionName == "AlterColumn":
+                    migrations = tableActions.alterColumn(migrations, actionData[1])
+                elif actionName == "DropForeignKey":
+                    migrations = tableActions.dropPrimaryKey(migrations, actionData[1])
+                elif actionName == "RenameTable":
+                    migrations = tableActions.renameTable(migrations, actionData[1])
+                elif actionName == "AddPrimaryKey":
+                    migrations == tableActions.addPrimaryKey(migrations, actionData[1])
+                elif actionName == "RenameColumn":
+                    migrations = tableActions.renameColumn(migrations, actionData[1])
+
+                if actionName in defines.DISABLE_ACTIONS:
+                    continue
+                
+                lib.dump(dumpName, actionData[1])
+                actions.update({actionData[0]: ""})
+
+    formatedMigrations = []
+
+    for tableName, tableData in migrations.items():
+        formatedColumns = []
+
+        for columnName, columnData in tableData.items():
+            if columnData.get("primary"):
+                columnData["type"] = "__primary__"
+
+            if columnData.get("foreign"):
+                columnData["type"] = "__foreign__"
+            else:
+                columnData.pop("foreign")
+
+            columnData.pop("primary")
+
+            appendItem = {
+                "name": columnName
+            }
+            
+            appendItem.update(columnData)
+            
+            formatedColumns.append(appendItem)
+        
+        formatedMigrations.append({
+            "tableName": tableName,
+            "columns": formatedColumns
+        })
+
+    with open("migrations.json", "w") as writeFile:
+        writeFile.write(json.dumps(formatedMigrations, indent=4))
+
+    # with open("actions.json", "w") as writeFile:
+    #     writeFile.write(json.dumps(list(actions.keys()), indent=4))
+
+
+if __name__ == "__main__":
+    if len(sys.argv) > 1:
+        main(sys.argv[1])

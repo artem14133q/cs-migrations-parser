@@ -1,0 +1,4 @@
+__pycache__/
+migrations/
+migrations.json
+actions.json
